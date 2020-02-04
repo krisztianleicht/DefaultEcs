@@ -17,7 +17,7 @@ namespace DefaultEcs
     /// </summary>
     [DebuggerTypeProxy(typeof(EntityDebugView))]
     [StructLayout(LayoutKind.Explicit)]
-    public readonly struct Entity : IDisposable, IEquatable<Entity>
+    public readonly partial struct Entity : IDisposable, IEquatable<Entity>
     {
         #region Fields
 
@@ -185,6 +185,18 @@ namespace DefaultEcs
             {
                 Publisher.Publish(WorldId, new ComponentChangedMessage<T>(EntityId, components));
             }
+        }
+
+        /// <summary>
+        /// Sends ComponentChanged message of the component of type <typeparamref name="T"/> on the current <see cref="Entity"/>.
+        /// </summary>
+        /// <typeparam name="T">The type of the component.</typeparam>
+        public void MarkChanged<T>()
+        {
+            if (WorldId == 0) Throw("Entity was not created from a World");
+
+            ref ComponentEnum components = ref Components;
+            Publisher.Publish(WorldId, new ComponentChangedMessage<T>(EntityId, components));
         }
 
         /// <summary>

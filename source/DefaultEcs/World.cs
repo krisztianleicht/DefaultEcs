@@ -15,7 +15,7 @@ namespace DefaultEcs
     /// Represents a item used to create and manage <see cref="Entity"/> objects.
     /// </summary>
     [DebuggerTypeProxy(typeof(WorldDebugView))]
-    public sealed class World : IEnumerable<Entity>, IPublisher, IDisposable
+    public sealed partial class World : IEnumerable<Entity>, IPublisher, IDisposable
     {
         #region Fields
 
