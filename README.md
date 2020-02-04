@@ -614,3 +614,31 @@ DoubleComponentEntityEnumeration: do basic movement with two component (position
 | DefaultEcs_ComponentMultiSystem |   107.3 us |  1.09 us |  1.02 us |     - |     - |     - |         - |
 |                  Entitas_System | 4,280.1 us | 15.08 us | 14.11 us |     - |     - |     - |     128 B |
 |             Entitas_MultiSystem | 3,030.2 us | 17.41 us | 16.29 us |     - |     - |     - |     465 B |
+
+
+DoubleComponentEntityEnumeration: Updated performance test with Set<> method invocation using 1000 entities.
+This is closer to our real world scenario.
+
+BenchmarkDotNet=v0.12.0, OS=Windows 10.0.18362
+Intel Core i5-6600 CPU 3.30GHz (Skylake), 1 CPU, 4 logical and 4 physical cores
+  [Host]     : .NET Framework 4.8 (4.8.4075.0), X64 RyuJIT
+  DefaultJob : .NET Framework 4.8 (4.8.4075.0), X64 RyuJIT
+
+
+```
+|                                        Method | EntityCount |      Mean |     Error |    StdDev |    Median |  Gen 0 |  Gen 1 | Gen 2 | Allocated |
+|---------------------------------------------- |------------ |----------:|----------:|----------:|----------:|-------:|-------:|------:|----------:|
+|                          DefaultEcs_EntitySet |        1000 | 24.412 us | 0.1316 us | 0.1231 us | 24.430 us |      - |      - |     - |         - |
+|            DefaultEcs_EntitySet_Batch_Changed |        1000 |  9.939 us | 0.0656 us | 0.0614 us |  9.944 us |      - |      - |     - |         - |
+|                             DefaultEcs_System |        1000 | 24.852 us | 0.0874 us | 0.0817 us | 24.869 us |      - |      - |     - |         - |
+|               DefaultEcs_System_Batch_Changed |        1000 |  9.622 us | 0.0353 us | 0.0330 us |  9.618 us |      - |      - |     - |         - |
+|                        DefaultEcs_MultiSystem |        1000 |  8.365 us | 0.1743 us | 0.4683 us |  8.167 us |      - |      - |     - |         - |
+|          DefaultEcs_MultiSystem_Batch_Changed |        1000 |  3.760 us | 0.0894 us | 0.2354 us |  3.666 us |      - |      - |     - |         - |
+|                    DefaultEcs_ComponentSystem |        1000 | 22.566 us | 0.1193 us | 0.1116 us | 22.543 us |      - |      - |     - |         - |
+|      DefaultEcs_ComponentSystem_Batch_Changed |        1000 |  7.589 us | 0.0447 us | 0.0418 us |  7.583 us |      - |      - |     - |         - |
+|               DefaultEcs_ComponentMultiSystem |        1000 |  7.848 us | 0.1546 us | 0.2010 us |  7.814 us |      - |      - |     - |         - |
+| DefaultEcs_ComponentMultiSystem_Batch_Changed |        1000 |  3.535 us | 0.2688 us | 0.7127 us |  3.162 us |      - |      - |     - |         - |
+|                         Entitas_ExecuteSystem |        1000 | 49.476 us | 0.8244 us | 0.7712 us | 49.804 us | 2.5024 |      - |     - |    8066 B |
+|                                Entitas_System |        1000 | 41.503 us | 0.0654 us | 0.0612 us | 41.491 us |      - |      - |     - |     113 B |
+|                           Entitas_MultiSystem |        1000 | 22.141 us | 0.2235 us | 0.2091 us | 22.094 us | 0.0916 | 0.0305 |     - |     450 B |
+
