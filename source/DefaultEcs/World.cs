@@ -72,6 +72,64 @@ namespace DefaultEcs
             }
         }
 
+        /// <summary>Enumerates the <see cref="Entity"/> of a <see cref="World" />.</summary>
+        public struct Enumerator : IEnumerator<Entity>
+        {
+            private readonly short _worldId;
+            private readonly EntityInfo[] _entityInfos;
+            private readonly int _maxIndex;
+
+            private int _index;
+
+            internal Enumerator(World world)
+            {
+                _worldId = world.WorldId;
+                _entityInfos = world.EntityInfos;
+                _maxIndex = Math.Min(_entityInfos.Length, world.LastEntityId + 1);
+
+                _index = -1;
+            }
+
+            #region IEnumerator
+
+            /// <summary>Gets the <see cref="Entity"/> at the current position of the enumerator.</summary>
+            /// <returns>The <see cref="Entity"/> in the <see cref="World" /> at the current position of the enumerator.</returns>
+            public Entity Current => new Entity(_worldId, _index);
+
+            object IEnumerator.Current => Current;
+
+            /// <summary>Advances the enumerator to the next <see cref="Entity"/> of the <see cref="World" />.</summary>
+            /// <returns>true if the enumerator was successfully advanced to the next <see cref="Entity"/>; false if the enumerator has passed the end of the collection.</returns>
+            public bool MoveNext()
+            {
+                while (++_index < _maxIndex)
+                {
+                    if (_entityInfos[_index].Components[IsAliveFlag])
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            /// <summary>Sets the enumerator to its initial position, which is before the first <see cref="Entity"/> in the collection.</summary>
+            public void Reset()
+            {
+                _index = -1;
+            }
+
+            #endregion
+
+            #region IDisposable
+
+            /// <summary>Releases all resources used by the <see cref="Enumerator" />.</summary>
+            public void Dispose()
+            { }
+
+            #endregion
+        }
+
         #endregion
 
         #region Fields
@@ -90,12 +148,6 @@ namespace DefaultEcs
         internal readonly short WorldId;
 
         internal EntityInfo[] EntityInfos;
-
-        /// <summary>
-        /// Event called just before an <see cref="Entity"/> from the current <see cref="World"/> instance is disposed.
-        /// The Entity still contains all its components.
-        /// </summary>
-        public event ActionIn<Entity> EntityDisposed;
 
         #endregion
 
@@ -149,7 +201,6 @@ namespace DefaultEcs
                 Worlds[WorldId] = this;
             }
 
-            Subscribe<EntityDisposingMessage>(On);
             Subscribe<EntityDisposedMessage>(On);
         }
 
@@ -164,16 +215,11 @@ namespace DefaultEcs
 
         #region Callbacks
 
-        private void On(in EntityDisposingMessage message)
-        {
-            EntityDisposed?.Invoke(new Entity(WorldId, message.EntityId));
-            EntityInfos[message.EntityId].Components.Clear();
-        }
-
         private void On(in EntityDisposedMessage message)
         {
             ref EntityInfo entityInfo = ref EntityInfos[message.EntityId];
 
+            entityInfo.Components.Clear();
             _entityIdDispenser.ReleaseInt(message.EntityId);
             ++entityInfo.Version;
 
@@ -201,24 +247,6 @@ namespace DefaultEcs
         internal void Add(IOptimizable optimizable) => _optimizer.Add(optimizable);
 
         internal void Remove(IOptimizable optimizable) => _optimizer.Remove(optimizable);
-
-        internal Entity CreateDisabledEntity()
-        {
-            int entityId = _entityIdDispenser.GetFreeInt();
-
-            if (entityId >= MaxCapacity)
-            {
-                throw new InvalidOperationException("Max number of Entity reached");
-            }
-
-            ArrayExtension.EnsureLength(ref EntityInfos, entityId, MaxCapacity);
-
-            ref ComponentEnum components = ref EntityInfos[entityId].Components;
-            components[IsAliveFlag] = true;
-            Publish(new EntityDisabledMessage(entityId, components));
-
-            return new Entity(WorldId, entityId);
-        }
 
         /// <summary>
         /// Creates a new instance of the <see cref="Entity"/> struct.
@@ -285,16 +313,16 @@ namespace DefaultEcs
         public Components<T> GetComponents<T>() => ComponentManager<T>.GetOrCreate(WorldId).AsComponents();
 
         /// <summary>
-        /// Gets an <see cref="EntitySetBuilder"/> to create a subset of <see cref="Entity"/> of the current <see cref="World"/>.
+        /// Gets an <see cref="EntityRuleBuilder"/> to create a subset of <see cref="Entity"/> of the current <see cref="World"/>.
         /// </summary>
-        /// <returns>An <see cref="EntitySetBuilder"/>.</returns>
-        public EntitySetBuilder GetEntities() => new EntitySetBuilder(this, true);
+        /// <returns>An <see cref="EntityRuleBuilder"/>.</returns>
+        public EntityRuleBuilder GetEntities() => new EntityRuleBuilder(this, true);
 
         /// <summary>
-        /// Gets an <see cref="EntitySetBuilder"/> to create a subset of disabled <see cref="Entity"/> of the current <see cref="World"/>.
+        /// Gets an <see cref="EntityRuleBuilder"/> to create a subset of disabled <see cref="Entity"/> of the current <see cref="World"/>.
         /// </summary>
-        /// <returns>An <see cref="EntitySetBuilder"/>.</returns>
-        public EntitySetBuilder GetDisabledEntities() => new EntitySetBuilder(this, false);
+        /// <returns>An <see cref="EntityRuleBuilder"/>.</returns>
+        public EntityRuleBuilder GetDisabledEntities() => new EntityRuleBuilder(this, false);
 
         /// <summary>
         /// Calls on <paramref name="reader"/> with all the maximum number of component of the current <see cref="World"/>.
@@ -335,6 +363,179 @@ namespace DefaultEcs
         /// </summary>
         public void Optimize() => Optimize(DefaultParallelRunner.Default);
 
+        /// <summary>
+        /// Subscribes an <see cref="EntityCreatedHandler"/> on the current <see cref="World"/> to be called when an <see cref="Entity"/> is created.
+        /// </summary>
+        /// <param name="action">The <see cref="EntityCreatedHandler"/> to be called.</param>
+        /// <returns>An <see cref="IDisposable"/> object used to unsubscribe.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="action"/> is null.</exception>
+        public IDisposable SubscribeEntityCreated(EntityCreatedHandler action)
+        {
+            if (action is null) throw new ArgumentNullException(nameof(action));
+
+            return Subscribe((in EntityCreatedMessage message) => action(new Entity(WorldId, message.EntityId)));
+        }
+
+        /// <summary>
+        /// Subscribes an <see cref="EntityEnabledHandler"/> on the current <see cref="World"/> to be called when an <see cref="Entity"/> is enabled.
+        /// </summary>
+        /// <param name="action">The <see cref="EntityEnabledHandler"/> to be called.</param>
+        /// <returns>An <see cref="IDisposable"/> object used to unsubscribe.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="action"/> is null.</exception>
+        public IDisposable SubscribeEntityEnabled(EntityEnabledHandler action)
+        {
+            if (action is null) throw new ArgumentNullException(nameof(action));
+
+            return Subscribe((in EntityEnabledMessage message) => action(new Entity(WorldId, message.EntityId)));
+        }
+
+        /// <summary>
+        /// Subscribes an <see cref="EntityDisabledHandler"/> on the current <see cref="World"/> to be called when an <see cref="Entity"/> is disabled.
+        /// </summary>
+        /// <param name="action">The <see cref="EntityDisabledHandler"/> to be called.</param>
+        /// <returns>An <see cref="IDisposable"/> object used to unsubscribe.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="action"/> is null.</exception>
+        public IDisposable SubscribeEntityDisabled(EntityDisabledHandler action)
+        {
+            if (action is null) throw new ArgumentNullException(nameof(action));
+
+            return Subscribe((in EntityDisabledMessage message) => action(new Entity(WorldId, message.EntityId)));
+        }
+
+        /// <summary>
+        /// Subscribes an <see cref="EntityDisposedHandler"/> on the current <see cref="World"/> to be called when an <see cref="Entity"/> is disposed.
+        /// </summary>
+        /// <param name="action">The <see cref="EntityDisposedHandler"/> to be called.</param>
+        /// <returns>An <see cref="IDisposable"/> object used to unsubscribe.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="action"/> is null.</exception>
+        public IDisposable SubscribeEntityDisposed(EntityDisposedHandler action)
+        {
+            IEnumerable<IDisposable> GetSubscriptions(EntityDisposedHandler a)
+            {
+                yield return Subscribe((in EntityDisposingMessage message) => action(new Entity(WorldId, message.EntityId)));
+                yield return Subscribe((in WorldDisposedMessage _) =>
+                {
+                    foreach (Entity entity in this)
+                    {
+                        a(entity);
+                    }
+                });
+            }
+
+            if (action is null) throw new ArgumentNullException(nameof(action));
+
+            return GetSubscriptions(action).Merge();
+        }
+
+        /// <summary>
+        /// Subscribes a <see cref="ComponentAddedHandler{T}"/> on the current <see cref="World"/> to be called when a component of type <typeparamref name="T"/> is added.
+        /// </summary>
+        /// <typeparam name="T">The type of the component.</typeparam>
+        /// <param name="action">The <see cref="ComponentAddedHandler{T}"/> to be called.</param>
+        /// <returns>An <see cref="IDisposable"/> object used to unsubscribe.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="action"/> is null.</exception>
+        public IDisposable SubscribeComponentAdded<T>(ComponentAddedHandler<T> action)
+        {
+            if (action is null) throw new ArgumentNullException(nameof(action));
+
+            return Subscribe((in ComponentAddedMessage<T> message) => action(
+                new Entity(WorldId, message.EntityId),
+                ComponentManager<T>.Get(WorldId).Get(message.EntityId)));
+        }
+
+        /// <summary>
+        /// Subscribes a <see cref="ComponentChangedHandler{T}"/> on the current <see cref="World"/> to be called when a component of type <typeparamref name="T"/> is changed.
+        /// </summary>
+        /// <typeparam name="T">The type of the component.</typeparam>
+        /// <param name="action">The <see cref="ComponentChangedHandler{T}"/> to be called.</param>
+        /// <returns>An <see cref="IDisposable"/> object used to unsubscribe.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="action"/> is null.</exception>
+        public IDisposable SubscribeComponentChanged<T>(ComponentChangedHandler<T> action)
+        {
+            ComponentManager<T>.GetOrCreatePrevious(WorldId);
+
+            if (action is null) throw new ArgumentNullException(nameof(action));
+
+            return Subscribe((in ComponentChangedMessage<T> message) => action(
+                new Entity(WorldId, message.EntityId),
+                ComponentManager<T>.GetPrevious(WorldId).Get(message.EntityId),
+                ComponentManager<T>.Get(WorldId).Get(message.EntityId)));
+        }
+
+        /// <summary>
+        /// Subscribes an <see cref="ComponentRemovedHandler{T}"/> on the current <see cref="World"/> to be called when a component of type <typeparamref name="T"/> is removed.
+        /// </summary>
+        /// <typeparam name="T">The type of the component.</typeparam>
+        /// <param name="action">The <see cref="ComponentRemovedHandler{T}"/> to be called.</param>
+        /// <returns>An <see cref="IDisposable"/> object used to unsubscribe.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="action"/> is null.</exception>
+        public IDisposable SubscribeComponentRemoved<T>(ComponentRemovedHandler<T> action)
+        {
+            IEnumerable<IDisposable> GetSubscriptions(ComponentRemovedHandler<T> a)
+            {
+                yield return Subscribe((in ComponentRemovedMessage<T> message) => a(
+                    new Entity(WorldId, message.EntityId),
+                    ComponentManager<T>.GetPrevious(WorldId).Get(message.EntityId)));
+                yield return Subscribe((in EntityDisposingMessage message) =>
+                {
+                    ComponentPool<T> pool = ComponentManager<T>.Get(WorldId);
+                    if (pool?.Has(message.EntityId) is true)
+                    {
+                        a(new Entity(WorldId, message.EntityId), pool.Get(message.EntityId));
+                    }
+                });
+                yield return Subscribe((in WorldDisposedMessage _) =>
+                {
+                    ComponentPool<T> pool = ComponentManager<T>.Get(WorldId);
+                    if (pool != null)
+                    {
+                        foreach (Entity entity in pool.GetEntities())
+                        {
+                            a(entity, pool.Get(entity.EntityId));
+                        }
+                    }
+                });
+            }
+
+            if (action is null) throw new ArgumentNullException(nameof(action));
+
+            ComponentManager<T>.GetOrCreatePrevious(WorldId);
+
+            return GetSubscriptions(action).Merge();
+        }
+
+        /// <summary>
+        /// Subscribes a <see cref="ComponentEnabledHandler{T}"/> on the current <see cref="World"/> to be called when a component of type <typeparamref name="T"/> is enabled.
+        /// </summary>
+        /// <typeparam name="T">The type of the component.</typeparam>
+        /// <param name="action">The <see cref="ComponentEnabledHandler{T}"/> to be called.</param>
+        /// <returns>An <see cref="IDisposable"/> object used to unsubscribe.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="action"/> is null.</exception>
+        public IDisposable SubscribeComponentEnabled<T>(ComponentEnabledHandler<T> action)
+        {
+            if (action is null) throw new ArgumentNullException(nameof(action));
+
+            return Subscribe((in ComponentEnabledMessage<T> message) => action(
+                new Entity(WorldId, message.EntityId),
+                ComponentManager<T>.Get(WorldId).Get(message.EntityId)));
+        }
+
+        /// <summary>
+        /// Subscribes a <see cref="ComponentDisabledHandler{T}"/> on the current <see cref="World"/> to be called when a component of type <typeparamref name="T"/> is disabled.
+        /// </summary>
+        /// <typeparam name="T">The type of the component.</typeparam>
+        /// <param name="action">The <see cref="ComponentDisabledHandler{T}"/> to be called.</param>
+        /// <returns>An <see cref="IDisposable"/> object used to unsubscribe.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="action"/> is null.</exception>
+        public IDisposable SubscribeComponentDisabled<T>(ComponentDisabledHandler<T> action)
+        {
+            if (action is null) throw new ArgumentNullException(nameof(action));
+
+            return Subscribe((in ComponentDisabledMessage<T> message) => action(
+                new Entity(WorldId, message.EntityId),
+                ComponentManager<T>.Get(WorldId).Get(message.EntityId)));
+        }
+
         #endregion
 
         #region IEnumerable
@@ -343,16 +544,9 @@ namespace DefaultEcs
         /// Returns an enumerator that iterates through the <see cref="Entity"/> of the current <see cref="World"/> instance.
         /// </summary>
         /// <returns>An enumerator that can be used to iterate through the <see cref="Entity"/>.</returns>
-        public IEnumerator<Entity> GetEnumerator()
-        {
-            for (int i = 0; i <= Math.Min(EntityInfos.Length, LastEntityId); ++i)
-            {
-                if (EntityInfos[i].Components[IsAliveFlag])
-                {
-                    yield return new Entity(WorldId, i);
-                }
-            }
-        }
+        public Enumerator GetEnumerator() => new Enumerator(this);
+
+        IEnumerator<Entity> IEnumerable<Entity>.GetEnumerator() => GetEnumerator();
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
@@ -361,13 +555,13 @@ namespace DefaultEcs
         #region IPublisher
 
         /// <summary>
-        /// Subscribes an <see cref="ActionIn{T}"/> to be called back when a <typeparamref name="T"/> object is published.
+        /// Subscribes an <see cref="MessageHandler{T}"/> to be called back when a <typeparamref name="T"/> object is published.
         /// </summary>
         /// <typeparam name="T">The type of the object to be called back with.</typeparam>
         /// <param name="action">The delegate to be called back.</param>
         /// <returns>An <see cref="IDisposable"/> object used to unsubscribe.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public IDisposable Subscribe<T>(ActionIn<T> action) => Publisher<T>.Subscribe(WorldId, action);
+        public IDisposable Subscribe<T>(MessageHandler<T> action) => Publisher<T>.Subscribe(WorldId, action);
 
         /// <summary>
         /// Publishes a <typeparamref name="T"/> object.
@@ -387,7 +581,7 @@ namespace DefaultEcs
         /// </summary>
         public void Dispose()
         {
-            Publish(new ManagedResourceReleaseAllMessage());
+            Publish(new WorldDisposedMessage(WorldId));
             Publisher.Publish(0, new WorldDisposedMessage(WorldId));
 
             lock (_lockObject)

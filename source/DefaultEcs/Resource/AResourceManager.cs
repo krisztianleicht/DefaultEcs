@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using DefaultEcs.Technical;
 using DefaultEcs.Technical.Helper;
-using DefaultEcs.Technical.Message;
 
 namespace DefaultEcs.Resource
 {
@@ -60,55 +58,77 @@ namespace DefaultEcs.Resource
 
         #region Callbacks
 
-        private void On(in ManagedResourceRequestMessage<ManagedResource<TInfo, TResource>> message)
+        private void OnAdded(in Entity entity, in ManagedResource<TInfo, TResource> value) => Add(entity, value.Info);
+
+        private void OnChanged(in Entity entity, in ManagedResource<TInfo, TResource> oldValue, in ManagedResource<TInfo, TResource> newValue)
         {
-            Resource resource;
-
-            lock (_lockObject)
-            {
-                if (!_resources.TryGetValue(message.ManagedResource.Info, out resource))
-                {
-                    resource = new Resource(Load(message.ManagedResource.Info));
-                    _resources.Add(message.ManagedResource.Info, resource);
-                }
-
-                resource.AddReference();
-            }
-
-            OnResourceLoaded(message.Entity, message.ManagedResource.Info, resource.Value);
+            Add(entity, newValue.Info);
+            Remove(oldValue.Info);
         }
 
-        private void On(in ManagedResourceReleaseMessage<ManagedResource<TInfo, TResource>> message)
+        private void OnRemoved(in Entity entity, in ManagedResource<TInfo, TResource> value) => Remove(value.Info);
+
+        private void OnAdded(in Entity entity, in ManagedResource<TInfo[], TResource> value)
         {
-            lock (_lockObject)
+            foreach (TInfo info in value.Info)
             {
-                if (_resources.TryGetValue(message.ManagedResource.Info, out Resource resource) && resource.RemoveReference())
-                {
-                    resource.Value?.Dispose();
-                    _resources.Remove(message.ManagedResource.Info);
-                }
+                Add(entity, info);
             }
         }
 
-        private void On(in ManagedResourceRequestMessage<ManagedResource<TInfo[], TResource>> message)
+        private void OnChanged(in Entity entity, in ManagedResource<TInfo[], TResource> oldValue, in ManagedResource<TInfo[], TResource> newValue)
         {
-            foreach (TInfo info in message.ManagedResource.Info)
+            foreach (TInfo info in newValue.Info)
             {
-                On(new ManagedResourceRequestMessage<ManagedResource<TInfo, TResource>>(message.Entity, new ManagedResource<TInfo, TResource>(info)));
+                Add(entity, info);
+            }
+            foreach (TInfo info in oldValue.Info)
+            {
+                Remove(info);
             }
         }
 
-        private void On(in ManagedResourceReleaseMessage<ManagedResource<TInfo[], TResource>> message)
+        private void OnRemoved(in Entity entity, in ManagedResource<TInfo[], TResource> value)
         {
-            foreach (TInfo info in message.ManagedResource.Info)
+            foreach (TInfo info in value.Info)
             {
-                On(new ManagedResourceReleaseMessage<ManagedResource<TInfo, TResource>>(new ManagedResource<TInfo, TResource>(info)));
+                Remove(info);
             }
         }
 
         #endregion
 
         #region Methods
+
+        private void Add(in Entity entity, TInfo info)
+        {
+            Resource resource;
+
+            lock (_lockObject)
+            {
+                if (!_resources.TryGetValue(info, out resource))
+                {
+                    resource = new Resource(Load(info));
+                    _resources.Add(info, resource);
+                }
+
+                resource.AddReference();
+            }
+
+            OnResourceLoaded(entity, info, resource.Value);
+        }
+
+        private void Remove(TInfo info)
+        {
+            lock (_lockObject)
+            {
+                if (_resources.TryGetValue(info, out Resource resource) && resource.RemoveReference())
+                {
+                    resource.Value?.Dispose();
+                    _resources.Remove(info);
+                }
+            }
+        }
 
         /// <summary>
         /// Loads a resource of type <typeparamref name="TResource"/> using the provided <typeparamref name="TInfo"/> parameter.
@@ -135,27 +155,29 @@ namespace DefaultEcs.Resource
         {
             IEnumerable<IDisposable> GetSubscriptions(World w)
             {
-                yield return w.Subscribe<ManagedResourceRequestMessage<ManagedResource<TInfo, TResource>>>(On);
-                yield return w.Subscribe<ManagedResourceReleaseMessage<ManagedResource<TInfo, TResource>>>(On);
-                yield return w.Subscribe<ManagedResourceRequestMessage<ManagedResource<TInfo[], TResource>>>(On);
-                yield return w.Subscribe<ManagedResourceReleaseMessage<ManagedResource<TInfo[], TResource>>>(On);
+                yield return w.SubscribeComponentAdded<ManagedResource<TInfo, TResource>>(OnAdded);
+                yield return w.SubscribeComponentChanged<ManagedResource<TInfo, TResource>>(OnChanged);
+                yield return w.SubscribeComponentRemoved<ManagedResource<TInfo, TResource>>(OnRemoved);
+                yield return w.SubscribeComponentAdded<ManagedResource<TInfo[], TResource>>(OnAdded);
+                yield return w.SubscribeComponentChanged<ManagedResource<TInfo[], TResource>>(OnChanged);
+                yield return w.SubscribeComponentRemoved<ManagedResource<TInfo[], TResource>>(OnRemoved);
             }
 
             ComponentPool<ManagedResource<TInfo, TResource>> singleComponents = ComponentManager<ManagedResource<TInfo, TResource>>.Get(world.WorldId);
             if (singleComponents != null)
             {
-                foreach (Entity entity in world.Where(e => singleComponents.Has(e.EntityId)))
+                foreach (Entity entity in singleComponents.GetEntities())
                 {
-                    On(new ManagedResourceRequestMessage<ManagedResource<TInfo, TResource>>(entity, singleComponents.Get(entity.EntityId)));
+                    OnAdded(entity, singleComponents.Get(entity.EntityId));
                 }
             }
 
-            ComponentPool<ManagedResource<TInfo[], TResource>> multipleComponents = ComponentManager<ManagedResource<TInfo[], TResource>>.Get(world.WorldId);
-            if (multipleComponents != null)
+            ComponentPool<ManagedResource<TInfo[], TResource>> arrayComponents = ComponentManager<ManagedResource<TInfo[], TResource>>.Get(world.WorldId);
+            if (arrayComponents != null)
             {
-                foreach (Entity entity in world.Where(e => multipleComponents.Has(e.EntityId)))
+                foreach (Entity entity in arrayComponents.GetEntities())
                 {
-                    On(new ManagedResourceRequestMessage<ManagedResource<TInfo[], TResource>>(entity, multipleComponents.Get(entity.EntityId)));
+                    OnAdded(entity, arrayComponents.Get(entity.EntityId));
                 }
             }
 

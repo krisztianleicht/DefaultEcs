@@ -8,14 +8,14 @@ namespace DefaultEcs
     public static class AoTHelper
     {
         /// <summary>
-        /// Registers the type <typeparamref name="T"/> so <see cref="SubscribeAttribute"/> can freely be used on method like the delegate <see cref="ActionIn{T}"/> to automatically subscribe when using <see cref="IPublisherExtension"/> on a <see cref="World"/> instance.
+        /// Registers the type <typeparamref name="T"/> so <see cref="SubscribeAttribute"/> can freely be used on method like the delegate <see cref="MessageHandler{T}"/> to automatically subscribe when using <see cref="IPublisherExtension"/> on a <see cref="World"/> instance.
         /// </summary>
         /// <typeparam name="T">The type of message.</typeparam>
         public static void RegisterMessage<T>()
         {
             using World world = new World();
 
-            world.Subscribe(default(ActionIn<T>));
+            world.Subscribe(default(MessageHandler<T>));
         }
 
         /// <summary>
@@ -24,7 +24,7 @@ namespace DefaultEcs
         /// <typeparam name="T">The type of component.</typeparam>
         public static void RegisterComponent<T>()
         {
-            new EntitySetBuilder(default, default)
+            new EntityRuleBuilder(default, default)
                 .With<T>().WithEither<T>().Or<T>().WithEither<T>().With<T>()
                 .Without<T>().WithoutEither<T>().Or<T>().WithoutEither<T>().Without<T>()
                 .WhenAdded<T>().WhenAddedEither<T>().Or<T>().WhenAddedEither<T>().WhenAdded<T>()

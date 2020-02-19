@@ -7,9 +7,9 @@ using DefaultEcs.Technical.Message;
 namespace DefaultEcs
 {
     /// <summary>
-    /// Represent an helper object to create an <see cref="EntitySet"/> to retrieve specific subset of <see cref="Entity"/>.
+    /// Represent an helper object to create rules to retrieve a specific subset of <see cref="Entity"/>.
     /// </summary>
-    public sealed class EntitySetBuilder
+    public sealed class EntityRuleBuilder
     {
         #region Types
 
@@ -23,13 +23,13 @@ namespace DefaultEcs
         }
 
         /// <summary>
-        /// Represents an helper object to create an either group for the construction of an <see cref="EntitySet"/> containing a specific subset of <see cref="Entity"/>.
+        /// Represents an helper object to create an either group rule to retrieve a specific subset of <see cref="Entity"/>.
         /// </summary>
         public sealed class EitherBuilder
         {
             #region Fields
 
-            private readonly EntitySetBuilder _builder;
+            private readonly EntityRuleBuilder _builder;
             private readonly EitherType _type;
 
             private ComponentEnum _eitherFilter;
@@ -38,7 +38,7 @@ namespace DefaultEcs
 
             #region Initialisation
 
-            internal EitherBuilder(EntitySetBuilder builder, EitherType type)
+            internal EitherBuilder(EntityRuleBuilder builder, EitherType type)
             {
                 _builder = builder;
                 _type = type;
@@ -60,7 +60,9 @@ namespace DefaultEcs
                     {
                         _builder._withEitherFilter[flag] = true;
                         _builder._nonReactSubscriptions.Add((s, w) => w.Subscribe<ComponentAddedMessage<T>>(s.CheckedAdd));
+                        _builder._nonReactSubscriptions.Add((s, w) => w.Subscribe<ComponentEnabledMessage<T>>(s.CheckedAdd));
                         _builder._subscriptions.Add((s, w) => w.Subscribe<ComponentRemovedMessage<T>>(s.CheckedRemove));
+                        _builder._subscriptions.Add((s, w) => w.Subscribe<ComponentDisabledMessage<T>>(s.CheckedRemove));
                     }
                 }
 
@@ -77,7 +79,9 @@ namespace DefaultEcs
                     {
                         _builder._withoutEitherFilter[flag] = true;
                         _builder._nonReactSubscriptions.Add((s, w) => w.Subscribe<ComponentRemovedMessage<T>>(s.CheckedAdd));
+                        _builder._nonReactSubscriptions.Add((s, w) => w.Subscribe<ComponentDisabledMessage<T>>(s.CheckedAdd));
                         _builder._subscriptions.Add((s, w) => w.Subscribe<ComponentAddedMessage<T>>(s.CheckedRemove));
+                        _builder._subscriptions.Add((s, w) => w.Subscribe<ComponentEnabledMessage<T>>(s.CheckedRemove));
                     }
                 }
 
@@ -90,6 +94,7 @@ namespace DefaultEcs
                 {
                     _builder._whenAddedFilter[ComponentManager<T>.Flag] = true;
                     _builder._subscriptions.Add((s, w) => w.Subscribe<ComponentAddedMessage<T>>(s.CheckedAdd));
+                    _builder._subscriptions.Add((s, w) => w.Subscribe<ComponentEnabledMessage<T>>(s.CheckedAdd));
                 }
 
                 return OrWith<T>();
@@ -112,12 +117,13 @@ namespace DefaultEcs
                 {
                     _builder._whenRemovedFilter[ComponentManager<T>.Flag] = true;
                     _builder._subscriptions.Add((s, w) => w.Subscribe<ComponentRemovedMessage<T>>(s.CheckedAdd));
+                    _builder._subscriptions.Add((s, w) => w.Subscribe<ComponentDisabledMessage<T>>(s.CheckedAdd));
                 }
 
                 return OrWithout<T>();
             }
 
-            internal EntitySetBuilder Commit()
+            internal EntityRuleBuilder Commit()
             {
                 if (_type == EitherType.Without || _type == EitherType.WhenRemoved)
                 {
@@ -151,36 +157,36 @@ namespace DefaultEcs
             /// Makes a rule to observe <see cref="Entity"/> with a component of type <typeparamref name="T"/>.
             /// </summary>
             /// <typeparam name="T">The type of component.</typeparam>
-            /// <returns>The current <see cref="EntitySetBuilder"/>.</returns>
-            public EntitySetBuilder With<T>() => Commit().With<T>();
+            /// <returns>The current <see cref="EntityRuleBuilder"/>.</returns>
+            public EntityRuleBuilder With<T>() => Commit().With<T>();
 
             /// <summary>
             /// Makes a rule to ignore <see cref="Entity"/> with a component of type <typeparamref name="T"/>.
             /// </summary>
             /// <typeparam name="T">The type of component.</typeparam>
-            /// <returns>The current <see cref="EntitySetBuilder"/>.</returns>
-            public EntitySetBuilder Without<T>() => Commit().Without<T>();
+            /// <returns>The current <see cref="EntityRuleBuilder"/>.</returns>
+            public EntityRuleBuilder Without<T>() => Commit().Without<T>();
 
             /// <summary>
             /// Makes a rule to observe <see cref="Entity"/> when a component of type <typeparamref name="T"/> is added.
             /// </summary>
             /// <typeparam name="T">The type of component.</typeparam>
-            /// <returns>The current <see cref="EntitySetBuilder"/>.</returns>
-            public EntitySetBuilder WhenAdded<T>() => Commit().WhenAdded<T>();
+            /// <returns>The current <see cref="EntityRuleBuilder"/>.</returns>
+            public EntityRuleBuilder WhenAdded<T>() => Commit().WhenAdded<T>();
 
             /// <summary>
             /// Makes a rule to observe <see cref="Entity"/> when a component of type <typeparamref name="T"/> is changed.
             /// </summary>
             /// <typeparam name="T">The type of component.</typeparam>
-            /// <returns>The current <see cref="EntitySetBuilder"/>.</returns>
-            public EntitySetBuilder WhenChanged<T>() => Commit().WhenChanged<T>();
+            /// <returns>The current <see cref="EntityRuleBuilder"/>.</returns>
+            public EntityRuleBuilder WhenChanged<T>() => Commit().WhenChanged<T>();
 
             /// <summary>
             /// Makes a rule to observe <see cref="Entity"/> when a component of type <typeparamref name="T"/> is removed.
             /// </summary>
             /// <typeparam name="T">The type of component.</typeparam>
-            /// <returns>The current <see cref="EntitySetBuilder"/>.</returns>
-            public EntitySetBuilder WhenRemoved<T>() => Commit().WhenRemoved<T>();
+            /// <returns>The current <see cref="EntityRuleBuilder"/>.</returns>
+            public EntityRuleBuilder WhenRemoved<T>() => Commit().WhenRemoved<T>();
 
             /// <summary>
             /// Makes a rule to obsverve <see cref="Entity"/> with at least one component of the either group.
@@ -218,10 +224,18 @@ namespace DefaultEcs
             public EitherBuilder WhenRemovedEither<T>() => Commit().WhenRemovedEither<T>();
 
             /// <summary>
+            /// Returns a <see cref="Predicate{T}"/> representing the specified rules.
+            /// </summary>
+            /// <returns>The <see cref="Predicate{T}"/>.</returns>
+            public Predicate<Entity> AsPredicate() => Commit().AsPredicate();
+
+            /// <summary>
             /// Returns an <see cref="EntitySet"/> with the specified rules.
             /// </summary>
             /// <returns>The <see cref="EntitySet"/>.</returns>
             public EntitySet AsSet() => Commit().AsSet();
+
+            //public EntityMap<TKey> AsMap<TKey>() => Commit().AsMap<TKey>();
 
             #endregion
         }
@@ -231,8 +245,8 @@ namespace DefaultEcs
         #region Fields
 
         private readonly World _world;
-        private readonly List<Func<EntitySet, World, IDisposable>> _subscriptions;
-        private readonly List<Func<EntitySet, World, IDisposable>> _nonReactSubscriptions;
+        private readonly List<Func<EntityContainerWatcher, World, IDisposable>> _subscriptions;
+        private readonly List<Func<EntityContainerWatcher, World, IDisposable>> _nonReactSubscriptions;
 
         private bool _addCreated;
         private ComponentEnum _withFilter;
@@ -249,12 +263,12 @@ namespace DefaultEcs
 
         #region Initialisation
 
-        internal EntitySetBuilder(World world, bool withEnabledEntities)
+        internal EntityRuleBuilder(World world, bool withEnabledEntities)
         {
             _world = world;
 
-            _subscriptions = new List<Func<EntitySet, World, IDisposable>>();
-            _nonReactSubscriptions = new List<Func<EntitySet, World, IDisposable>>();
+            _subscriptions = new List<Func<EntityContainerWatcher, World, IDisposable>>();
+            _nonReactSubscriptions = new List<Func<EntityContainerWatcher, World, IDisposable>>();
 
             _addCreated = withEnabledEntities;
             _subscriptions.Add((s, w) => w.Subscribe<EntityDisposingMessage>(s.Remove));
@@ -277,6 +291,25 @@ namespace DefaultEcs
 
         #region Methods
 
+        private Predicate<ComponentEnum> GetFilter() => EntityRuleFilterFactory.GetFilter(_withFilter, _withoutFilter, _withEitherFilters, _withoutEitherFilters);
+
+        private bool GetSubscriptions(out List<Func<EntityContainerWatcher, World, IDisposable>> subscriptions)
+        {
+            subscriptions = _subscriptions.ToList();
+            bool hasWhenFilter = !_whenAddedFilter.IsNull || !_whenChangedFilter.IsNull || !_whenRemovedFilter.IsNull;
+            if (!hasWhenFilter)
+            {
+                subscriptions.AddRange(_nonReactSubscriptions);
+            }
+
+            if (_addCreated && !hasWhenFilter)
+            {
+                subscriptions.Add((s, w) => w.Subscribe<EntityCreatedMessage>(s.Add));
+            }
+
+            return hasWhenFilter;
+        }
+
         private void AddWithEitherFilter(ComponentEnum filter)
         {
             if (!_withEitherFilters?.Select(f => f.ToString()).Contains(filter.ToString()) ?? true)
@@ -297,8 +330,8 @@ namespace DefaultEcs
         /// Makes a rule to observe <see cref="Entity"/> with a component of type <typeparamref name="T"/>.
         /// </summary>
         /// <typeparam name="T">The type of component.</typeparam>
-        /// <returns>The current <see cref="EntitySetBuilder"/>.</returns>
-        public EntitySetBuilder With<T>()
+        /// <returns>The current <see cref="EntityRuleBuilder"/>.</returns>
+        public EntityRuleBuilder With<T>()
         {
             _addCreated = false;
 
@@ -306,7 +339,9 @@ namespace DefaultEcs
             {
                 _withFilter[ComponentManager<T>.Flag] = true;
                 _nonReactSubscriptions.Add((s, w) => w.Subscribe<ComponentAddedMessage<T>>(s.CheckedAdd));
+                _nonReactSubscriptions.Add((s, w) => w.Subscribe<ComponentEnabledMessage<T>>(s.CheckedAdd));
                 _subscriptions.Add((s, w) => w.Subscribe<ComponentRemovedMessage<T>>(s.Remove));
+                _subscriptions.Add((s, w) => w.Subscribe<ComponentDisabledMessage<T>>(s.Remove));
             }
 
             return this;
@@ -316,14 +351,16 @@ namespace DefaultEcs
         /// Makes a rule to ignore <see cref="Entity"/> with a component of type <typeparamref name="T"/>.
         /// </summary>
         /// <typeparam name="T">The type of component.</typeparam>
-        /// <returns>The current <see cref="EntitySetBuilder"/>.</returns>
-        public EntitySetBuilder Without<T>()
+        /// <returns>The current <see cref="EntityRuleBuilder"/>.</returns>
+        public EntityRuleBuilder Without<T>()
         {
             if (!_withoutFilter[ComponentManager<T>.Flag])
             {
                 _withoutFilter[ComponentManager<T>.Flag] = true;
                 _nonReactSubscriptions.Add((s, w) => w.Subscribe<ComponentRemovedMessage<T>>(s.CheckedAdd));
+                _nonReactSubscriptions.Add((s, w) => w.Subscribe<ComponentDisabledMessage<T>>(s.CheckedAdd));
                 _subscriptions.Add((s, w) => w.Subscribe<ComponentAddedMessage<T>>(s.Remove));
+                _subscriptions.Add((s, w) => w.Subscribe<ComponentEnabledMessage<T>>(s.Remove));
             }
 
             return this;
@@ -333,13 +370,14 @@ namespace DefaultEcs
         /// Makes a rule to observe <see cref="Entity"/> when a component of type <typeparamref name="T"/> is added.
         /// </summary>
         /// <typeparam name="T">The type of component.</typeparam>
-        /// <returns>The current <see cref="EntitySetBuilder"/>.</returns>
-        public EntitySetBuilder WhenAdded<T>()
+        /// <returns>The current <see cref="EntityRuleBuilder"/>.</returns>
+        public EntityRuleBuilder WhenAdded<T>()
         {
             if (!_whenAddedFilter[ComponentManager<T>.Flag])
             {
                 _whenAddedFilter[ComponentManager<T>.Flag] = true;
                 _subscriptions.Add((s, w) => w.Subscribe<ComponentAddedMessage<T>>(s.CheckedAdd));
+                _subscriptions.Add((s, w) => w.Subscribe<ComponentEnabledMessage<T>>(s.CheckedAdd));
             }
 
             return With<T>();
@@ -349,8 +387,8 @@ namespace DefaultEcs
         /// Makes a rule to observe <see cref="Entity"/> when a component of type <typeparamref name="T"/> is changed.
         /// </summary>
         /// <typeparam name="T">The type of component.</typeparam>
-        /// <returns>The current <see cref="EntitySetBuilder"/>.</returns>
-        public EntitySetBuilder WhenChanged<T>()
+        /// <returns>The current <see cref="EntityRuleBuilder"/>.</returns>
+        public EntityRuleBuilder WhenChanged<T>()
         {
             if (!_whenChangedFilter[ComponentManager<T>.Flag])
             {
@@ -365,13 +403,14 @@ namespace DefaultEcs
         /// Makes a rule to observe <see cref="Entity"/> when a component of type <typeparamref name="T"/> is removed.
         /// </summary>
         /// <typeparam name="T">The type of component.</typeparam>
-        /// <returns>The current <see cref="EntitySetBuilder"/>.</returns>
-        public EntitySetBuilder WhenRemoved<T>()
+        /// <returns>The current <see cref="EntityRuleBuilder"/>.</returns>
+        public EntityRuleBuilder WhenRemoved<T>()
         {
             if (!_whenRemovedFilter[ComponentManager<T>.Flag])
             {
                 _whenRemovedFilter[ComponentManager<T>.Flag] = true;
                 _subscriptions.Add((s, w) => w.Subscribe<ComponentRemovedMessage<T>>(s.CheckedAdd));
+                _subscriptions.Add((s, w) => w.Subscribe<ComponentDisabledMessage<T>>(s.CheckedAdd));
             }
 
             return Without<T>();
@@ -413,25 +452,36 @@ namespace DefaultEcs
         public EitherBuilder WhenRemovedEither<T>() => new EitherBuilder(this, EitherType.WhenRemoved).Or<T>();
 
         /// <summary>
+        /// Returns a <see cref="Predicate{T}"/> representing the specified rules.
+        /// </summary>
+        /// <returns>The <see cref="Predicate{T}"/>.</returns>
+        public Predicate<Entity> AsPredicate()
+        {
+            Predicate<ComponentEnum> filter = GetFilter();
+
+            return e => filter(e.Components);
+        }
+
+        /// <summary>
         /// Returns an <see cref="EntitySet"/> with the specified rules.
         /// </summary>
         /// <returns>The <see cref="EntitySet"/>.</returns>
-        public EntitySet AsSet()
-        {
-            List<Func<EntitySet, World, IDisposable>> subscriptions = _subscriptions.ToList();
-            bool hasWhenFilter = !_whenAddedFilter.IsNull || !_whenChangedFilter.IsNull || !_whenRemovedFilter.IsNull;
-            if (!hasWhenFilter)
-            {
-                subscriptions.AddRange(_nonReactSubscriptions);
-            }
+        public EntitySet AsSet() => new EntitySet(GetSubscriptions(out List<Func<EntityContainerWatcher, World, IDisposable>> subscriptions), _world, GetFilter(), subscriptions);
 
-            if (_addCreated && !hasWhenFilter)
-            {
-                subscriptions.Add((s, w) => w.Subscribe<EntityCreatedMessage>(s.Add));
-            }
+        //public EntityMap<TKey> AsMap<TKey>()
+        //{
+        //    With<TKey>();
 
-            return new EntitySet(hasWhenFilter, _world, _withFilter, _withoutFilter, _withEitherFilters, _withoutEitherFilters, subscriptions);
-        }
+        //    return new EntityMap<TKey>(GetSubscriptions(out List<Func<EntityContainerWatcher, World, IDisposable>> subscriptions), _world, GetFilter(), subscriptions);
+        //}
+
+        //public EntityMap<TKey, TEntities> AsMap<TKey, TEntities>()
+        //    where TEntities : ICollection<Entity>, new()
+        //{
+        //    With<TKey>();
+
+        //    return new EntityMap<TKey, TEntities>(GetSubscriptions(out List<Func<EntityContainerWatcher, World, IDisposable>> subscriptions), _world, GetFilter(), subscriptions);
+        //}
 
         #endregion
     }

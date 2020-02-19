@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using BenchmarkDotNet.Attributes;
 using DefaultEcs.System;
-using DefaultEcs.Technical;
 using DefaultEcs.Threading;
 using Entitas;
 using DefaultEntity = DefaultEcs.Entity;

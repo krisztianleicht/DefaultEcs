@@ -1,8 +1,9 @@
 ﻿using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using DefaultEcs.Resource;
 using DefaultEcs.Technical.Helper;
 using DefaultEcs.Technical.Message;
 
@@ -10,11 +11,81 @@ namespace DefaultEcs.Technical
 {
     internal sealed class ComponentPool<T> : IOptimizable
     {
+        #region Types
+
+        public readonly struct Enumerable : IEnumerable<Entity>
+        {
+            private readonly ComponentPool<T> _pool;
+
+            public Enumerable(ComponentPool<T> pool)
+            {
+                _pool = pool;
+            }
+
+            #region IEnumerable
+
+            public IEnumerator<Entity> GetEnumerator() => new Enumerator(_pool);
+
+            IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+            #endregion
+        }
+
+        public struct Enumerator : IEnumerator<Entity>
+        {
+            private readonly short _worldId;
+            private readonly int[] _mapping;
+
+            private int _index;
+
+            public Enumerator(ComponentPool<T> pool)
+            {
+                _worldId = pool._worldId;
+                _mapping = pool._mapping;
+
+                _index = -1;
+            }
+
+            #region IEnumerator
+
+            public Entity Current => new Entity(_worldId, _index);
+
+            object IEnumerator.Current => Current;
+
+            public bool MoveNext()
+            {
+                while (++_index < _mapping.Length)
+                {
+                    if (_mapping[_index] >= 0)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            public void Reset()
+            {
+                _index = -1;
+            }
+
+            #endregion
+
+            #region IDisposable
+
+            public void Dispose()
+            { }
+
+            #endregion
+        }
+
+        #endregion
+
         #region Fields
 
         private static readonly bool _isReferenceType;
         private static readonly bool _isFlagType;
-        private static readonly bool _isManagedResourceType;
 
         private readonly short _worldId;
         private readonly int _worldMaxCapacity;
@@ -45,7 +116,6 @@ namespace DefaultEcs.Technical
 
             _isReferenceType = !typeInfo.IsValueType;
             _isFlagType = typeInfo.IsFlagType();
-            _isManagedResourceType = typeInfo.GenericTypeArguments.Length > 0 && typeInfo.GetGenericTypeDefinition() == typeof(ManagedResource<,>);
         }
 
         public ComponentPool(short worldId, int worldMaxCapacity, int maxCapacity)
@@ -65,11 +135,6 @@ namespace DefaultEcs.Technical
             Publisher<EntityCopyMessage>.Subscribe(_worldId, On);
             Publisher<ComponentReadMessage>.Subscribe(_worldId, On);
 
-            if (_isManagedResourceType)
-            {
-                Publisher<ManagedResourceReleaseAllMessage>.Subscribe(_worldId, On);
-            }
-
             World.Worlds[_worldId].Add(this);
         }
 
@@ -85,7 +150,11 @@ namespace DefaultEcs.Technical
         {
             if (Has(message.EntityId))
             {
-                message.Copy.SetDisabled(Get(message.EntityId));
+                message.Copy.Set(Get(message.EntityId));
+                if (!message.Components[ComponentManager<T>.Flag])
+                {
+                    message.Copy.Disable<T>();
+                }
             }
         }
 
@@ -95,17 +164,6 @@ namespace DefaultEcs.Technical
             if (componentIndex != -1)
             {
                 message.Reader.OnRead(ref _components[componentIndex], new Entity(_worldId, _links[componentIndex].EntityId));
-            }
-        }
-
-        private void On(in ManagedResourceReleaseAllMessage message)
-        {
-            for (int i = 0; i <= _lastComponentIndex; ++i)
-            {
-                for (int j = 0; j < _links[i].ReferenceCount; ++j)
-                {
-                    Publisher.Publish(_worldId, new ManagedResourceReleaseMessage<T>(_components[i]));
-                }
             }
         }
 
@@ -127,17 +185,7 @@ namespace DefaultEcs.Technical
             ref int componentIndex = ref _mapping[entityId];
             if (componentIndex != -1)
             {
-                if (_isManagedResourceType)
-                {
-                    Publisher.Publish(_worldId, new ManagedResourceReleaseMessage<T>(_components[componentIndex]));
-                }
-
                 _components[componentIndex] = component;
-
-                if (_isManagedResourceType)
-                {
-                    Publisher.Publish(_worldId, new ManagedResourceRequestMessage<T>(new Entity(_worldId, entityId), component));
-                }
 
                 return false;
             }
@@ -165,11 +213,6 @@ namespace DefaultEcs.Technical
             _components[_lastComponentIndex] = component;
             _links[_lastComponentIndex] = new ComponentLink(entityId);
 
-            if (_isManagedResourceType)
-            {
-                Publisher.Publish(_worldId, new ManagedResourceRequestMessage<T>(new Entity(_worldId, entityId), component));
-            }
-
             return true;
         }
 
@@ -184,22 +227,12 @@ namespace DefaultEcs.Technical
             ref int componentIndex = ref _mapping[entityId];
             if (componentIndex != -1)
             {
-                if (componentIndex == referenceComponentIndex)
-                {
-                    return false;
-                }
-
                 Remove(entityId);
                 isNew = false;
             }
 
             ++_links[referenceComponentIndex].ReferenceCount;
             componentIndex = referenceComponentIndex;
-
-            if (_isManagedResourceType)
-            {
-                Publisher.Publish(_worldId, new ManagedResourceRequestMessage<T>(new Entity(_worldId, entityId), _components[componentIndex]));
-            }
 
             return isNew;
         }
@@ -216,11 +249,6 @@ namespace DefaultEcs.Technical
             if (componentIndex == -1)
             {
                 return false;
-            }
-
-            if (_isManagedResourceType)
-            {
-                Publisher.Publish(_worldId, new ManagedResourceReleaseMessage<T>(_components[componentIndex]));
             }
 
             ref ComponentLink link = ref _links[componentIndex];
@@ -282,6 +310,8 @@ namespace DefaultEcs.Technical
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Components<T> AsComponents() => new Components<T>(_mapping, _components);
+
+        public Enumerable GetEntities() => new Enumerable(this);
 
         #endregion
 
