@@ -10,39 +10,12 @@
     <DefaultDocumentationFolder>..\..\documentation\api</DefaultDocumentationFolder>
   </PropertyGroup>
   <ItemGroup Label="Documentation" Condition="'$(TargetFramework)'=='netstandard1.1'">
-    <PackageReference Include="DefaultDocumentation" Version="0.5.2" PrivateAssets="all" />
+    <PackageReference Include="DefaultDocumentation" Version="0.5.5" PrivateAssets="all" />
   </ItemGroup>
 
   <PropertyGroup Label="Package">
-    <Version>0.14.0</Version>
+    <Version>0.14.1</Version>
     <PackageReleaseNotes>
-breaking change:
-removed World.MaxEntityCount, obsolete
-removed World.SetMaximumComponentCount, obsolete
-removed World.GetMaximumComponentCount, obsolete
-removed World.GetAllComponents, obsolete
-removed World.GetAllEntities, obsolete
-removed World.EntityDisposed
-renamed EntitySetBuilder to EntityRuleBuilder
-renamed EntitySetBuilderExtension to EntityRuleBuilderExtension
-renamed ActionIn to MessageHandler
-
-fixed BinarySerializer and TextSerializer serialization of multi generic types
-
-added AoTHelper to help the generic code generation for AoT compilation
-added World.Optimize to sort entities and their components so accessing them through EntitySet always move forward in memory
-added World.SubscribeEntityCreated
-added World.SubscribeEntityEnabled
-added World.SubscribeEntityDisabled
-added World.SubscribeEntityDisposed
-added World.SubscribeComponentAdded
-added World.SubscribeComponentChanged
-added World.SubscribeComponentRemoved
-added World.SubscribeComponentEnabled
-added World.SubscribeComponentDisabled
-added EntityRuleBuilder.AsPredicate
-added Entity.NotifyChanged
-added EntityRecord.NotifyChanged
     </PackageReleaseNotes>
   </PropertyGroup>
 </Project>

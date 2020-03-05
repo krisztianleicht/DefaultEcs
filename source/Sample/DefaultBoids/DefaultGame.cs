@@ -15,19 +15,19 @@ namespace DefaultBoids
     {
         #region Fields
 
-        public const int BoidsCount = 20000;
+        public const int BoidsCount = 30000;
 
         public const int ResolutionWidth = 1920;
         public const int ResolutionHeight = 1080;
 
-        public const float BehaviorSeparationWeight = 10;
+        public const float BehaviorSeparationWeight = 20;
         public const float BehaviorAlignmentWeight = 4;
         public const float BehaviorCohesionWeight = 1;
 
-        public const float NeighborRange = 10;
+        public const float NeighborRange = 150;
 
-        public const float MinVelocity = 160;
-        public const float MaxVelocity = 400;
+        public const float MinVelocity = 290;
+        public const float MaxVelocity = 300;
 
         private readonly GraphicsDeviceManager _deviceManager;
         private readonly SpriteBatch _batch;
@@ -68,14 +68,16 @@ namespace DefaultBoids
             _font = Content.Load<SpriteFont>("font");
 
             _world = new World();
-            Grid grid = new Grid();
 
             _runner = new DefaultParallelRunner(Environment.ProcessorCount);
             _system = new SequentialSystem<float>(
-                new BoidsSystem(_world, _runner, grid),
-                new MoveSystem(_world, _runner, grid));
+                new BehaviorSystem(_world, _runner),
+                new BoidsSystem(_world, _runner),
+                new MoveSystem(_world, _runner));
 
             _drawSystem = new DrawSystem(_batch, _square, _world, _runner);
+
+            _world.CreateBehaviors();
 
             Random random = new Random();
 
@@ -86,7 +88,7 @@ namespace DefaultBoids
                 {
                     Color = new Color((float)random.NextDouble(), (float)random.NextDouble(), (float)random.NextDouble(), 1f),
                     Position = new Vector2((float)random.NextDouble() * _deviceManager.PreferredBackBufferWidth, (float)random.NextDouble() * _deviceManager.PreferredBackBufferHeight),
-                    Size = new Vector2(random.Next(3, 6), random.Next(10, 15)),
+                    Size = new Vector2(random.Next(10, 15), random.Next(20, 30)),
                 });
 
                 Vector2 velocity = new Vector2((float)random.NextDouble() - .5f, (float)random.NextDouble() - .5f);
@@ -97,8 +99,10 @@ namespace DefaultBoids
 
                 entity.Set(new Velocity { Value = velocity * (MinVelocity + ((float)random.NextDouble() * (MaxVelocity - MinVelocity))) });
                 entity.Set<Acceleration>();
-                entity.Set(grid);
+                entity.Set(entity.Get<DrawInfo>().Position.ToGridId());
             }
+
+            _world.Optimize();
 
             _watch = Stopwatch.StartNew();
         }

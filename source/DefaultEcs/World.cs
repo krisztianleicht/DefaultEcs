@@ -23,7 +23,7 @@ namespace DefaultEcs
 
         private class Optimizer : IParallelRunnable
         {
-            private readonly List<IOptimizable> _items;
+            private readonly List<ISortable> _items;
 
             private Action _mainAction;
             private bool shouldContinue;
@@ -31,10 +31,10 @@ namespace DefaultEcs
 
             public Optimizer()
             {
-                _items = new List<IOptimizable>();
+                _items = new List<ISortable>();
             }
 
-            public void Add(IOptimizable item)
+            public void Add(ISortable item)
             {
                 lock (this)
                 {
@@ -42,7 +42,7 @@ namespace DefaultEcs
                 }
             }
 
-            public void Remove(IOptimizable item)
+            public void Remove(ISortable item)
             {
                 lock (this)
                 {
@@ -67,12 +67,14 @@ namespace DefaultEcs
 
                 while (Volatile.Read(ref shouldContinue) && (index = Interlocked.Increment(ref _lastIndex)) < _items.Count)
                 {
-                    _items[index].Optimize(ref shouldContinue);
+                    _items[index].Sort(ref shouldContinue);
                 }
             }
         }
 
-        /// <summary>Enumerates the <see cref="Entity"/> of a <see cref="World" />.</summary>
+        /// <summary>
+        /// Enumerates the <see cref="Entity"/> of a <see cref="World" />.
+        /// </summary>
         public struct Enumerator : IEnumerator<Entity>
         {
             private readonly short _worldId;
@@ -92,13 +94,17 @@ namespace DefaultEcs
 
             #region IEnumerator
 
-            /// <summary>Gets the <see cref="Entity"/> at the current position of the enumerator.</summary>
+            /// <summary>
+            /// Gets the <see cref="Entity"/> at the current position of the enumerator.
+            /// </summary>
             /// <returns>The <see cref="Entity"/> in the <see cref="World" /> at the current position of the enumerator.</returns>
             public Entity Current => new Entity(_worldId, _index);
 
             object IEnumerator.Current => Current;
 
-            /// <summary>Advances the enumerator to the next <see cref="Entity"/> of the <see cref="World" />.</summary>
+            /// <summary>
+            /// Advances the enumerator to the next <see cref="Entity"/> of the <see cref="World" />.
+            /// </summary>
             /// <returns>true if the enumerator was successfully advanced to the next <see cref="Entity"/>; false if the enumerator has passed the end of the collection.</returns>
             public bool MoveNext()
             {
@@ -113,7 +119,9 @@ namespace DefaultEcs
                 return false;
             }
 
-            /// <summary>Sets the enumerator to its initial position, which is before the first <see cref="Entity"/> in the collection.</summary>
+            /// <summary>
+            /// Sets the enumerator to its initial position, which is before the first <see cref="Entity"/> in the collection.
+            /// </summary>
             public void Reset()
             {
                 _index = -1;
@@ -123,7 +131,9 @@ namespace DefaultEcs
 
             #region IDisposable
 
-            /// <summary>Releases all resources used by the <see cref="Enumerator" />.</summary>
+            /// <summary>
+            /// Releases all resources used by the <see cref="Enumerator" />.
+            /// </summary>
             public void Dispose()
             { }
 
@@ -146,6 +156,8 @@ namespace DefaultEcs
         private readonly Optimizer _optimizer;
 
         internal readonly short WorldId;
+
+        private volatile bool _isDisposed;
 
         internal EntityInfo[] EntityInfos;
 
@@ -202,6 +214,8 @@ namespace DefaultEcs
             }
 
             Subscribe<EntityDisposedMessage>(On);
+
+            _isDisposed = false;
         }
 
         /// <summary>
@@ -244,9 +258,9 @@ namespace DefaultEcs
 
         #region Methods
 
-        internal void Add(IOptimizable optimizable) => _optimizer.Add(optimizable);
+        internal void Add(ISortable optimizable) => _optimizer.Add(optimizable);
 
-        internal void Remove(IOptimizable optimizable) => _optimizer.Remove(optimizable);
+        internal void Remove(ISortable optimizable) => _optimizer.Remove(optimizable);
 
         /// <summary>
         /// Creates a new instance of the <see cref="Entity"/> struct.
@@ -332,7 +346,7 @@ namespace DefaultEcs
         public void ReadAllComponentTypes(IComponentTypeReader reader) => Publish(new ComponentTypeReadMessage(reader ?? throw new ArgumentNullException(nameof(reader))));
 
         /// <summary>
-        /// Sorts current instance inner storage so accessing <see cref="Entity"/> and their components from <see cref="EntitySet"/> always move forward in memory.
+        /// Sorts current instance inner storage so accessing <see cref="Entity"/> and their components from <see cref="EntitySet"/> and <see cref="EntitiesMap{TKey}"/> always move forward in memory.
         /// This method will return once <paramref name="mainAction"/> is executed even if the optimization process has not finished.
         /// </summary>
         /// <param name="runner">The <see cref="IParallelRunner"/> to process this operation in parallel.</param>
@@ -347,7 +361,7 @@ namespace DefaultEcs
         }
 
         /// <summary>
-        /// Sorts current instance inner storage so accessing <see cref="Entity"/> and their components from <see cref="EntitySet"/> always move forward in memory.
+        /// Sorts current instance inner storage so accessing <see cref="Entity"/> and their components from <see cref="EntitySet"/> and <see cref="EntitiesMap{TKey}"/> always move forward in memory.
         /// </summary>
         /// <param name="runner">The <see cref="IParallelRunner"/> to process this operation in parallel.</param>
         public void Optimize(IParallelRunner runner)
@@ -359,7 +373,7 @@ namespace DefaultEcs
         }
 
         /// <summary>
-        /// Sorts current instance inner storage so accessing <see cref="Entity"/> and their components from <see cref="EntitySet"/> always move forward in memory.
+        /// Sorts current instance inner storage so accessing <see cref="Entity"/> and their components from <see cref="EntitySet"/> and <see cref="EntitiesMap{TKey}"/> always move forward in memory.
         /// </summary>
         public void Optimize() => Optimize(DefaultParallelRunner.Default);
 
@@ -581,17 +595,22 @@ namespace DefaultEcs
         /// </summary>
         public void Dispose()
         {
-            Publish(new WorldDisposedMessage(WorldId));
-            Publisher.Publish(0, new WorldDisposedMessage(WorldId));
-
-            lock (_lockObject)
+            if (!_isDisposed)
             {
-                Worlds[WorldId] = null;
+                _isDisposed = true;
+
+                Publish(new WorldDisposedMessage(WorldId));
+                Publisher.Publish(0, new WorldDisposedMessage(WorldId));
+
+                lock (_lockObject)
+                {
+                    Worlds[WorldId] = null;
+                }
+
+                _worldIdDispenser.ReleaseInt(WorldId);
+
+                GC.SuppressFinalize(this);
             }
-
-            _worldIdDispenser.ReleaseInt(WorldId);
-
-            GC.SuppressFinalize(this);
         }
 
         #endregion

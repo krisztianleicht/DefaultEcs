@@ -144,49 +144,15 @@ namespace DefaultEcs.Test
         }
 
         [Fact]
-        public void Should_call_EntityAdded_When_entity_added()
+        public void Dispose_Should_not_throw_When_world_already_disposed()
         {
-            using World world = new World(4);
-            using EntitySet set = world.GetEntities().With<bool>().AsSet();
+            World world = new World(4);
 
-            Entity addedEntity = default;
-            set.EntityAdded += (in Entity e) => addedEntity = e;
+            EntitySet set = world.GetEntities().AsSet();
 
-            Entity entity = world.CreateEntity();
-            entity.Set<bool>();
+            world.Dispose();
 
-            Check.That(addedEntity).IsEqualTo(entity);
-        }
-
-        [Fact]
-        public void Should_call_EntityAdded_When_entity_already_present()
-        {
-            using World world = new World(4);
-            using EntitySet set = world.GetEntities().With<bool>().AsSet();
-
-            Entity entity = world.CreateEntity();
-            entity.Set<bool>();
-
-            Entity addedEntity = default;
-            set.EntityAdded += (in Entity e) => addedEntity = e;
-
-            Check.That(addedEntity).IsEqualTo(entity);
-        }
-
-        [Fact]
-        public void Should_call_EntityRemoved_When_entity_removed()
-        {
-            using World world = new World(4);
-            using EntitySet set = world.GetEntities().With<bool>().AsSet();
-
-            Entity removedEntity = default;
-            set.EntityRemoved += (in Entity e) => removedEntity = e;
-
-            Entity entity = world.CreateEntity();
-            entity.Set<bool>();
-            entity.Remove<bool>();
-
-            Check.That(removedEntity).IsEqualTo(entity);
+            Check.ThatCode(set.Dispose).DoesNotThrow();
         }
 
         #endregion

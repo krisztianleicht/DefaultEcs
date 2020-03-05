@@ -54,7 +54,7 @@ This is the current strategy used to version DefaultEcs: v0.major.minor
 <a name='Overview_World'></a>
 ## World
 The World class act as a manager to create entity, get a selection of specific entities, get a family of component or publish and subscribe to messages that can be used to communicate in a decoupled way between the different elements.  
-Multiple World objects can be used in parallel, each instance being thread-safe from one an other but operations performed on a single instance and all of its created items should be thought as non thread-safe but depending on what is done, it is still possible to process operations concurrently to optimise performance.
+Multiple World objects can be used in parallel, each instance being thread-safe from one another but operations performed on a single instance and all of its created items should be thought as non thread-safe. Depending on what is done, it is still possible to process operations concurrently to optimise performance.
 
 Worlds are created as such
 ```csharp
@@ -559,9 +559,9 @@ Some sample projects are available to give a better picture on how to use Defaul
 
 [DefaultBoids](https://github.com/Doraku/DefaultEcs/tree/master/source/Sample/DefaultBoids)
 
-![](https://github.com/Doraku/DefaultEcs/raw/master/image/defaultboids.gif)
+[![DefaultBoids](https://img.youtube.com/vi/yEdcqOTCteY/0.jpg)](https://youtu.be/yEdcqOTCteY)
 
-A really simple implementation of a [boids simulation](https://en.wikipedia.org/wiki/Boids), here displaying 10k boids with an old Intel Core i5-3570K CPU 3.40GHz at ~100fps.
+A really simple implementation of a [boids simulation](https://en.wikipedia.org/wiki/Boids), here displaying 30k boids with an old Intel Core i5-3570K CPU 3.40GHz at ~70fps.
 
 [DefaultBrick](https://github.com/Doraku/DefaultEcs/tree/master/source/Sample/DefaultBrick)
 [win10-x64](https://github.com/Doraku/DefaultEcs/releases/download/v0.9.0/DefaultBrick_win10-x64.zip)

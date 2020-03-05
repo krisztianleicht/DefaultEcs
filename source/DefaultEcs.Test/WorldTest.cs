@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using DefaultEcs.Serialization;
 using DefaultEcs.Threading;
@@ -15,6 +16,14 @@ namespace DefaultEcs.Test
         private struct FlagType { }
 
         #region Tests
+
+        [Fact]
+        public void ToString_Should_return_id()
+        {
+            using World world = new World();
+
+            Check.That(Regex.IsMatch(world.ToString(), "^World \\d*$")).IsTrue();
+        }
 
         [Fact]
         public void World_Should_throw_When_maxCapacity_is_inferior_to_0()
@@ -256,28 +265,54 @@ namespace DefaultEcs.Test
         }
 
         [Fact]
+        public void Optimize_Should_throw_When_runner_is_null()
+        {
+            using World world = new World();
+
+            Check.ThatCode(() => world.Optimize(null)).Throws<ArgumentNullException>();
+
+            Check.ThatCode(() => world.Optimize(null, () => { })).Throws<ArgumentNullException>();
+        }
+
+        [Fact]
+        public void Optimize_Should_throw_When_action_is_null()
+        {
+            using World world = new World();
+            using DefaultParallelRunner runner = new DefaultParallelRunner(Environment.ProcessorCount);
+
+            Check.ThatCode(() => world.Optimize(runner, null)).Throws<ArgumentNullException>();
+        }
+
+        [Fact]
         public void Optimize_Should_sort_inner_storages()
         {
             using World world = new World();
             using EntitySet set = world.GetEntities().With<int>().AsSet();
+            using EntitiesMap<bool> map = world.GetEntities().With<int>().AsMultiMap<bool>();
 
             Entity e1 = world.CreateEntity();
             Entity e2 = world.CreateEntity();
             Entity e3 = world.CreateEntity();
             Entity e4 = world.CreateEntity();
 
+            e4.Set(true);
             e4.Set(4);
+            e3.Set(true);
             e3.Set(3);
+            e2.Set(true);
             e2.Set(2);
+            e1.Set(true);
             e1.Set(1);
 
             Check.That(set.GetEntities().ToArray()).ContainsExactly(e4, e3, e2, e1);
             Check.That(world.Get<int>().ToArray()).ContainsExactly(4, 3, 2, 1);
+            Check.That(map[true].ToArray()).ContainsExactly(e4, e3, e2, e1);
 
             world.Optimize();
 
             Check.That(set.GetEntities().ToArray()).ContainsExactly(e1, e2, e3, e4);
             Check.That(world.Get<int>().ToArray()).ContainsExactly(1, 2, 3, 4);
+            Check.That(map[true].ToArray()).ContainsExactly(e1, e2, e3, e4);
         }
 
         [Fact]

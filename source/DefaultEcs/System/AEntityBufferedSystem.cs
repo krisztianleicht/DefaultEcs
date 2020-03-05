@@ -16,24 +16,6 @@ namespace DefaultEcs.System
 
         private readonly EntitySet _set;
 
-        /// <summary>
-        /// Event called when an <see cref="Entity"/> is added to the inner <see cref="EntitySet"/>.
-        /// </summary>
-        public event MessageHandler<Entity> EntityAdded
-        {
-            add => _set.EntityAdded += value;
-            remove => _set.EntityAdded -= value;
-        }
-
-        /// <summary>
-        /// Event called when an <see cref="Entity"/> is removed from the inner <see cref="EntitySet"/>.
-        /// </summary>
-        public event MessageHandler<Entity> EntityRemoved
-        {
-            add => _set.EntityRemoved += value;
-            remove => _set.EntityRemoved -= value;
-        }
-
         #endregion
 
         #region Initialisation
@@ -56,7 +38,7 @@ namespace DefaultEcs.System
         /// <exception cref="ArgumentNullException"><paramref name="world"/> is null.</exception>
         protected AEntityBufferedSystem(World world)
         {
-            _set = EntitySetFactory.Create(GetType())(world ?? throw new ArgumentNullException(nameof(world)));
+            _set = EntitySetFactory.Create(GetType())(this, world ?? throw new ArgumentNullException(nameof(world)));
         }
 
         #endregion

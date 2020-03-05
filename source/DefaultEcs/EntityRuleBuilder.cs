@@ -105,7 +105,10 @@ namespace DefaultEcs
                 if (!_builder._whenChangedFilter[ComponentManager<T>.Flag])
                 {
                     _builder._whenChangedFilter[ComponentManager<T>.Flag] = true;
-                    _builder._subscriptions.Add((s, w) => w.Subscribe<ComponentChangedMessage<T>>(s.CheckedAdd));
+                    if (!_builder._predicateFilter[ComponentManager<T>.Flag])
+                    {
+                        _builder._subscriptions.Add((s, w) => w.Subscribe<ComponentChangedMessage<T>>(s.AddOrRemove));
+                    }
                 }
 
                 return OrWith<T>();
@@ -159,6 +162,14 @@ namespace DefaultEcs
             /// <typeparam name="T">The type of component.</typeparam>
             /// <returns>The current <see cref="EntityRuleBuilder"/>.</returns>
             public EntityRuleBuilder With<T>() => Commit().With<T>();
+
+            /// <summary>
+            /// Makes a rule to observe <see cref="Entity"/> with a component of type <typeparamref name="T"/> validating the given <see cref="ComponentPredicate{T}"/>.
+            /// </summary>
+            /// <typeparam name="T">The type of component.</typeparam>
+            /// <param name="predicate">The <see cref="ComponentPredicate{T}"/> which needs to be validated.</param>
+            /// <returns>The current <see cref="EntityRuleBuilder"/>.</returns>
+            public EntityRuleBuilder With<T>(ComponentPredicate<T> predicate) => Commit().With(predicate);
 
             /// <summary>
             /// Makes a rule to ignore <see cref="Entity"/> with a component of type <typeparamref name="T"/>.
@@ -235,7 +246,35 @@ namespace DefaultEcs
             /// <returns>The <see cref="EntitySet"/>.</returns>
             public EntitySet AsSet() => Commit().AsSet();
 
-            //public EntityMap<TKey> AsMap<TKey>() => Commit().AsMap<TKey>();
+            /// <summary>
+            /// Returns an <see cref="EntityMap{TKey}"/> with the specified rules.
+            /// </summary>
+            /// <typeparam name="TKey">The component type to use as key.</typeparam>
+            /// <param name="comparer">The <see cref="IEqualityComparer{T}"/> implementation to use when comparing keys, or null to use the default <see cref="EqualityComparer{T}.Default"/> for the type of the key.</param>
+            /// <returns>The <see cref="EntityMap{TKey}"/>.</returns>
+            public EntityMap<TKey> AsMap<TKey>(IEqualityComparer<TKey> comparer) => Commit().AsMap(comparer);
+
+            /// <summary>
+            /// Returns an <see cref="EntityMap{TKey}"/> with the specified rules.
+            /// </summary>
+            /// <typeparam name="TKey">The component type to use as key.</typeparam>
+            /// <returns>The <see cref="EntityMap{TKey}"/>.</returns>
+            public EntityMap<TKey> AsMap<TKey>() => AsMap<TKey>(default);
+
+            /// <summary>
+            /// Returns an <see cref="EntitiesMap{TKey}"/> with the specified rules.
+            /// </summary>
+            /// <typeparam name="TKey">The component type to use as key.</typeparam>
+            /// <param name="comparer">The <see cref="IEqualityComparer{T}"/> implementation to use when comparing keys, or null to use the default <see cref="EqualityComparer{T}.Default"/> for the type of the key.</param>
+            /// <returns>The <see cref="EntitiesMap{TKey}"/>.</returns>
+            public EntitiesMap<TKey> AsMultiMap<TKey>(IEqualityComparer<TKey> comparer) => Commit().AsMultiMap(comparer);
+
+            /// <summary>
+            /// Returns an <see cref="EntitiesMap{TKey}"/> with the specified rules.
+            /// </summary>
+            /// <typeparam name="TKey">The component type to use as key.</typeparam>
+            /// <returns>The <see cref="EntitiesMap{TKey}"/>.</returns>
+            public EntitiesMap<TKey> AsMultiMap<TKey>() => AsMultiMap<TKey>(default);
 
             #endregion
         }
@@ -249,6 +288,7 @@ namespace DefaultEcs
         private readonly List<Func<EntityContainerWatcher, World, IDisposable>> _nonReactSubscriptions;
 
         private bool _addCreated;
+        private ComponentEnum _predicateFilter;
         private ComponentEnum _withFilter;
         private ComponentEnum _withEitherFilter;
         private ComponentEnum _withoutFilter;
@@ -256,6 +296,7 @@ namespace DefaultEcs
         private ComponentEnum _whenAddedFilter;
         private ComponentEnum _whenChangedFilter;
         private ComponentEnum _whenRemovedFilter;
+        private List<Predicate<int>> _predicates;
         private List<ComponentEnum> _withEitherFilters;
         private List<ComponentEnum> _withoutEitherFilters;
 
@@ -348,6 +389,30 @@ namespace DefaultEcs
         }
 
         /// <summary>
+        /// Makes a rule to observe <see cref="Entity"/> with a component of type <typeparamref name="T"/> validating the given <see cref="ComponentPredicate{T}"/>.
+        /// </summary>
+        /// <typeparam name="T">The type of component.</typeparam>
+        /// <param name="predicate">The <see cref="ComponentPredicate{T}"/> which needs to be validated.</param>
+        /// <returns>The current <see cref="EntityRuleBuilder"/>.</returns>
+        public EntityRuleBuilder With<T>(ComponentPredicate<T> predicate)
+        {
+            if (predicate is null) throw new ArgumentNullException(nameof(predicate));
+
+            if (!_predicateFilter[ComponentManager<T>.Flag])
+            {
+                _predicateFilter[ComponentManager<T>.Flag] = true;
+                if (!_whenChangedFilter[ComponentManager<T>.Flag])
+                {
+                    _subscriptions.Add((s, w) => w.Subscribe<ComponentChangedMessage<T>>(s.AddOrRemove));
+                }
+            }
+
+            (_predicates ?? (_predicates = new List<Predicate<int>>())).Add(i => predicate(ComponentManager<T>.Pools[_world.WorldId].Get(i)));
+
+            return With<T>();
+        }
+
+        /// <summary>
         /// Makes a rule to ignore <see cref="Entity"/> with a component of type <typeparamref name="T"/>.
         /// </summary>
         /// <typeparam name="T">The type of component.</typeparam>
@@ -393,7 +458,10 @@ namespace DefaultEcs
             if (!_whenChangedFilter[ComponentManager<T>.Flag])
             {
                 _whenChangedFilter[ComponentManager<T>.Flag] = true;
-                _subscriptions.Add((s, w) => w.Subscribe<ComponentChangedMessage<T>>(s.CheckedAdd));
+                if (!_predicateFilter[ComponentManager<T>.Flag])
+                {
+                    _subscriptions.Add((s, w) => w.Subscribe<ComponentChangedMessage<T>>(s.AddOrRemove));
+                }
             }
 
             return With<T>();
@@ -459,29 +527,61 @@ namespace DefaultEcs
         {
             Predicate<ComponentEnum> filter = GetFilter();
 
-            return e => filter(e.Components);
+            Predicate<int> singlePredicate = _predicates?.FirstOrDefault();
+
+            return _predicates?.Count switch
+            {
+                null => e => filter(e.Components),
+                1 => e => filter(e.Components) && singlePredicate(e.EntityId),
+                _ => e => filter(e.Components) && _predicates.All(p => p(e.EntityId))
+            };
         }
 
         /// <summary>
         /// Returns an <see cref="EntitySet"/> with the specified rules.
         /// </summary>
         /// <returns>The <see cref="EntitySet"/>.</returns>
-        public EntitySet AsSet() => new EntitySet(GetSubscriptions(out List<Func<EntityContainerWatcher, World, IDisposable>> subscriptions), _world, GetFilter(), subscriptions);
+        public EntitySet AsSet() => new EntitySet(GetSubscriptions(out List<Func<EntityContainerWatcher, World, IDisposable>> subscriptions), _world, GetFilter(), _predicates, subscriptions);
 
-        //public EntityMap<TKey> AsMap<TKey>()
-        //{
-        //    With<TKey>();
+        /// <summary>
+        /// Returns an <see cref="EntityMap{TKey}"/> with the specified rules.
+        /// </summary>
+        /// <typeparam name="TKey">The component type to use as key.</typeparam>
+        /// <param name="comparer">The <see cref="IEqualityComparer{T}"/> implementation to use when comparing keys, or null to use the default <see cref="EqualityComparer{T}.Default"/> for the type of the key.</param>
+        /// <returns>The <see cref="EntityMap{TKey}"/>.</returns>
+        public EntityMap<TKey> AsMap<TKey>(IEqualityComparer<TKey> comparer)
+        {
+            With<TKey>();
 
-        //    return new EntityMap<TKey>(GetSubscriptions(out List<Func<EntityContainerWatcher, World, IDisposable>> subscriptions), _world, GetFilter(), subscriptions);
-        //}
+            return new EntityMap<TKey>(GetSubscriptions(out List<Func<EntityContainerWatcher, World, IDisposable>> subscriptions), _world, GetFilter(), _predicates, subscriptions, comparer);
+        }
 
-        //public EntityMap<TKey, TEntities> AsMap<TKey, TEntities>()
-        //    where TEntities : ICollection<Entity>, new()
-        //{
-        //    With<TKey>();
+        /// <summary>
+        /// Returns an <see cref="EntityMap{TKey}"/> with the specified rules.
+        /// </summary>
+        /// <typeparam name="TKey">The component type to use as key.</typeparam>
+        /// <returns>The <see cref="EntityMap{TKey}"/>.</returns>
+        public EntityMap<TKey> AsMap<TKey>() => AsMap<TKey>(default);
 
-        //    return new EntityMap<TKey, TEntities>(GetSubscriptions(out List<Func<EntityContainerWatcher, World, IDisposable>> subscriptions), _world, GetFilter(), subscriptions);
-        //}
+        /// <summary>
+        /// Returns an <see cref="EntitiesMap{TKey}"/> with the specified rules.
+        /// </summary>
+        /// <typeparam name="TKey">The component type to use as key.</typeparam>
+        /// <param name="comparer">The <see cref="IEqualityComparer{T}"/> implementation to use when comparing keys, or null to use the default <see cref="EqualityComparer{T}.Default"/> for the type of the key.</param>
+        /// <returns>The <see cref="EntitiesMap{TKey}"/>.</returns>
+        public EntitiesMap<TKey> AsMultiMap<TKey>(IEqualityComparer<TKey> comparer)
+        {
+            With<TKey>();
+
+            return new EntitiesMap<TKey>(GetSubscriptions(out List<Func<EntityContainerWatcher, World, IDisposable>> subscriptions), _world, GetFilter(), _predicates, subscriptions, comparer);
+        }
+
+        /// <summary>
+        /// Returns an <see cref="EntitiesMap{TKey}"/> with the specified rules.
+        /// </summary>
+        /// <typeparam name="TKey">The component type to use as key.</typeparam>
+        /// <returns>The <see cref="EntitiesMap{TKey}"/>.</returns>
+        public EntitiesMap<TKey> AsMultiMap<TKey>() => AsMultiMap<TKey>(default);
 
         #endregion
     }
