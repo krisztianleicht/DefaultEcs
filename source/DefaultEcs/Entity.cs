@@ -181,6 +181,24 @@ namespace DefaultEcs
             ComponentManager<T>.GetPrevious(WorldId)?.Set(EntityId, component);
         }
 
+        public void SetRef<T>(ref T component)
+        {
+            if (WorldId == 0) Throw("Entity was not created from a World");
+
+            ref ComponentEnum components = ref Components;
+            if (ComponentManager<T>.GetOrCreate(WorldId).Set(EntityId, component))
+            {
+                components[ComponentManager<T>.Flag] = true;
+                Publisher.Publish(WorldId, new ComponentAddedMessage<T>(EntityId, components));
+            }
+            else
+            {
+                Publisher.Publish(WorldId, new ComponentChangedMessage<T>(EntityId, components));
+            }
+
+            ComponentManager<T>.GetPrevious(WorldId)?.Set(EntityId, component);
+        }
+
         /// <summary>
         /// Sends ComponentChanged message of the component of type <typeparamref name="T"/> on the current <see cref="Entity"/>.
         /// </summary>
