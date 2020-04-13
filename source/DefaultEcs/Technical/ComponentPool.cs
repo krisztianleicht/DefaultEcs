@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -120,7 +121,7 @@ namespace DefaultEcs.Technical
             _isFlagType = typeInfo.IsFlagType();
         }
 
-        public ComponentPool(short worldId, int worldMaxCapacity, int maxCapacity)
+        public ComponentPool(short worldId, int worldMaxCapacity, int maxCapacity, bool isPrevious)
         {
             _worldId = worldId;
             _worldMaxCapacity = worldMaxCapacity;
@@ -134,8 +135,11 @@ namespace DefaultEcs.Technical
 
             Publisher<ComponentTypeReadMessage>.Subscribe(_worldId, On);
             Publisher<EntityDisposedMessage>.Subscribe(_worldId, On);
-            Publisher<EntityCopyMessage>.Subscribe(_worldId, On);
-            Publisher<ComponentReadMessage>.Subscribe(_worldId, On);
+            if (!isPrevious)
+            {
+                Publisher<EntityCopyMessage>.Subscribe(_worldId, On);
+                Publisher<ComponentReadMessage>.Subscribe(_worldId, On);
+            }
 
             World.Worlds[_worldId].Add(this);
         }
@@ -180,6 +184,7 @@ namespace DefaultEcs.Technical
         public bool Has(int entityId) => entityId < _mapping.Length && _mapping[entityId] != -1;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [SuppressMessage("Performance", "RCS1242:Do not pass non-read-only struct by read-only reference.")]
         public bool Set(int entityId, in T component)
         {
             ArrayExtension.EnsureLength(ref _mapping, entityId, _worldMaxCapacity, -1);
